@@ -1,0 +1,93 @@
+###############################################################################
+#                                                                             #
+#     IAR Assembler V8.50.6.265/W32 for ARM 31/Jan/2021  10:30:26             #
+#     Copyright 1999-2020 IAR Systems AB.                                     #
+#                                                                             #
+#           Source file   =  C:\Users\jjona\OneDrive\Dokument\DST2\cstartup.s #
+#           List file     =  C:\Users\jjona\OneDrive\Dokument\DST2\Debug\List\cstartup.lst#
+#           Object file   =  C:\Users\jjona\OneDrive\Dokument\DST2\Debug\Obj\cstartup.o#
+#           Command line  =  -f C:\Users\jjona\AppData\Local\Temp\EWF165.tmp  #
+#                            (C:\Users\jjona\OneDrive\Dokument\DST2\cstartup.s #
+#                            -OC:\Users\jjona\OneDrive\Dokument\DST2\Debug\Obj #
+#                            -s+ -M<> -w+ -r                                  #
+#                            -LC:\Users\jjona\OneDrive\Dokument\DST2\Debug\List #
+#                            -t8 --cpu Cortex-M3 --fpu None)                  #
+#                                                                             #
+###############################################################################
+
+    1                           /*********************************************
+                                *****
+    2                            *
+    3                            * Part one of the system initialization code,
+                                 contains low-level
+    4                            * initialization, plain thumb variant.
+    5                            *
+    6                            * Copyright 2008 IAR Systems. All rights
+                                 reserved.
+    7                            *
+    8                            * $Revision: 46842 $
+    9                            *
+   10                            *********************************************
+                                *****/
+   11                           
+   12                           ;
+   13                           ; The modules in this file are included in the
+                                 libraries, and may be replaced
+   14                           ; by any user-defined modules that define the
+                                 PUBLIC symbol _program_start or
+   15                           ; a user defined start symbol.
+   16                           ; To override the cstartup defined in the
+                                 library, simply add your modified
+   17                           ; version to the workbench project.
+   18                           ;
+   19                           ; The vector table is normally located at
+                                 address 0.
+   20                           ; When debugging in RAM, it can be located in
+                                 RAM, aligned to at least 2^6.
+   21                           ; The name "__vector_table" has special
+                                 meaning for C-SPY:
+   22                           ; it is where the SP start value is found, and
+                                 the NVIC vector
+   23                           ; table register (VTOR) is initialized to this
+                                 address if != 0.
+   24                           ;
+   25                           ; Cortex-M version
+   26                           ;
+   27                           
+   28                                   MODULE  ?cstartup
+   29                           
+   30                           
+   31                                   PUBLIC  __iar_program_start
+   32                                  EXTERN  __cmain
+   33                                   EXTERN  __vector_table
+   34                                   EXTWEAK __iar_init_core
+   35                                   EXTWEAK __iar_init_vfp
+   36                           
+   37                                   SECTION .text:CODE:REORDER(1)
+   38                                   THUMB
+   39                           __iar_program_start:
+   40                                   FUNCALL __iar_program_start,
+                                 __iar_init_core
+   41    00000000 ........              BL      __iar_init_core
+   42                                   FUNCALL __iar_program_start,
+                                 __iar_init_vfp
+   43    00000004 ........              BL      __iar_init_vfp
+   44                           
+   45                                   FUNCALL __iar_program_start,
+                                 __cmain
+   46    00000008 ........              BL      __cmain
+   47                           
+   48                                   REQUIRE __vector_table
+   49                           
+   50                           
+   51                                   END
+##############################
+#           CRC:0            #
+#        Errors:   0         #
+#        Warnings: 0         #
+#         Bytes: 12          #
+##############################
+
+
+
+

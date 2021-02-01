@@ -1,0 +1,558 @@
+###############################################################################
+#                                                                             #
+#     IAR Assembler V8.50.6.265/W32 for ARM 31/Jan/2021  13:31:16             #
+#     Copyright 1999-2020 IAR Systems AB.                                     #
+#                                                                             #
+#           Source file   =  C:\Users\jjona\OneDrive\Dokument\DST2\context_switching_functions_march_2019.s#
+#           List file     =  C:\Users\jjona\OneDrive\Dokument\DST2\Debug\List\context_switching_functions_march_2019.lst#
+#           Object file   =  C:\Users\jjona\OneDrive\Dokument\DST2\Debug\Obj\context_switching_functions_march_2019.o#
+#           Command line  =  -f C:\Users\jjona\AppData\Local\Temp\EW857D.tmp  #
+#                            (C:\Users\jjona\OneDrive\Dokument\DST2\context_switching_functions_march_2019.s #
+#                            -OC:\Users\jjona\OneDrive\Dokument\DST2\Debug\Obj #
+#                            -s+ -M<> -w+ -r                                  #
+#                            -LC:\Users\jjona\OneDrive\Dokument\DST2\Debug\List #
+#                            -t8 --cpu Cortex-M3 --fpu None)                  #
+#                                                                             #
+###############################################################################
+
+    1                                   ;
+    2                                   ; written on 2nd March 2019, by Maben
+                                 Rabi
+    3                                   ; needs conformance to the  API header
+                                 file: kernel_functions_march_2019.h file
+    4                                   ;
+    5                                   
+    6                                   MODULE  ?context_switching_functions_m
+                                arch_2019
+    7                           
+    8                                   PUBLIC  SwitchContext
+    9                                   PUBLIC  LoadContext_In_Run
+   10                                   PUBLIC  LoadContext_In_Terminate
+   11                                   PUBLIC  switch_to_stack_of_next_task
+   12                           
+   13                                   PUBLIC  SysTick_Handler
+   14                                   PUBLIC  SVC_Handler
+   15                                   PUBLIC  isr_on
+   16                                   PUBLIC  isr_off
+   17                                   
+   18                                   EXTERN  NextTask
+   19                                   EXTERN  PreviousTask
+   20                                   EXTERN  TimerInt
+   21                           
+   22                                   SECTION .text:CODE
+   23                           
+   24                                   THUMB
+   25                           
+   26                           address_ICSR             EQU   0xE000ED04    ;
+                                 address of the NVIC ICSR register
+   27                                                                        ;
+                                 if bit 22 is 1, then an interrupt is
+                                 pending
+   28                                                                        ;
+                                 if we write  1 to bit 25 then we clear any
+                                 pending sys tick interrupt
+   29                           address_sysTick_reload   EQU   0xE000E014    ;
+                                 address of the Sys Tick reload value
+                                 register
+   30                           address_sysTick_counter  EQU   0xE000E018    ;
+                                 address of the Sys Tick count down counter
+                                 register
+   31                           
+   32                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+   33                           SysTick_Handler
+   34                           
+   35    00000000 72B6                  CPSID   I              ; disable all
+                                                                maskable
+                                                                interrupts
+   36                                   
+   37    00000002 1EF0040F              TST     LR,  #0x04     ; if LR =
+                                                                0xFFFFFFF9 then
+                                                                before
+                                                                interrupt, SP
+                                                                was MSP,
+   38                                                          ;              
+                                      which means that IRQ arrived
+   39                                                          ;              
+                                      while main was executing
+   40                                                          ; if LR =
+                                 0xFFFFFFFD then before interrupt, SP was
+                                 PSP,´
+   41                                                          ;              
+                                      which means that IRQ arrived
+   42                                                          ;              
+                                      while a task was executing
+   43    00000006 21D0                  BEQ     trigger_hardware_unstack 
+                                                  
+   44                                                          ; jump and exit
+                                 the ISR if IRQ arrived while main was
+                                 running
+   45                               
+   46    00000008 EFF30982              MRS     r2,  psp       ; hardware has
+                                                                already pushed
+                                                                the 8
+                                                                registers:
+   47                                                          ; r0, r1, r2,
+                                 r3, r12, LR(r14), PC(r15), xPSR  (with r0 at
+                                 top)
+   48    0000000C BFF36F8F              ISB
+   49    00000010 684B                  LDR     r3,  =NextTask  
+   50    00000012 1868                  LDR     r0,  [r3]      ; point r0 to
+                                                                RunningTask->SP
+   51    00000014 BFF36F8F              ISB
+   52    00000018 0260                  STR     r2,  [r0]
+   53    0000001A BFF36F8F              ISB
+   54    0000001E 00F10400              ADD     r0,  r0, #4
+   55    00000022 80E8F00F              STMIA   r0, {r4-r11}   ; store r4
+                                                                through
+                                                                r11
+   56    00000026 BFF36F8F              ISB
+   57    0000002A 08B5                  PUSH    {r3, LR}       ; push on main
+                                                                stack the
+                                                                address of
+                                                                RuningTask, and
+                                                                LR
+   58                                   
+   59    0000002C ........              BL      TimerInt       ; call Kernel C
+                                                                function
+                                                                TimerInt
+   60                                                          ; among other
+                                 things, this might update RunningTask
+   61                                                          ; (and
+                                 unfortunately) changes LR 
+   62    00000030 BDE80840              POP     {r3, LR}
+   63                                   
+   64    00000034 BFF36F8F              ISB       
+   65    00000038 1868                  LDR     r0,  [r3]      ; point r0 to
+                                                                RunningTask->SP
+   66                                   
+   67    0000003A 0268                  LDR     r2,  [r0]
+   68    0000003C 82F30988              MSR     psp, r2
+   69    00000040 BFF36F8F              ISB
+   70    00000044 00F10400              ADD     r0,  r0, #4
+   71    00000048 90E8F00F              LDMIA   r0, {r4-r11}   ; store r4
+                                                                through
+                                                                r11
+   72                           
+   73                           trigger_hardware_unstack
+   74    0000004C 62B6                  CPSIE   I              ; enable all
+                                                                maskable
+                                                                interupts 
+                                                                
+   75    0000004E 7047                  BX      LR             ; exit ISR and
+                                                                trigger
+                                                                hardware
+                                                                unstacking
+                                                                
+   76                           
+   77                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+   78                           SVC_Handler
+   79    00000050 72B6                  CPSID   I
+   80    00000052 07B5                  PUSH    {r0,r1,r2,LR}   ; push onto
+                                                                 main
+                                                                 stack
+   81                           
+   82    00000054 1EF0040F              TST     LR,  #0x04         ; if LR =
+                                                                    0xFFFFFFF9
+                                                                    then before
+                                                                    interrupt,
+                                                                    SP was
+                                                                    MSP,
+   83    00000058 05D0                  BEQ     called_from_main   ;           
+                                                                           
+                                                                    which means
+                                                                    that IRQ
+                                                                    arrived
+   84                                                              ;          
+                                          while main was executing
+   85                                                              ; if LR =
+                                 0xFFFFFFFD then before interrupt, SP was
+                                 PSP,´
+   86                                                              ;          
+                                          which means that IRQ arrived
+   87                                                              ;          
+                                          while a task was executing       
+                                 
+   88    0000005A EFF30980              MRS     r0, psp         ; peek into
+                                                                 process
+                                                                 stack
+   89    0000005E BFF36F8F              ISB
+   90    00000062 8169                  LDR     r1, [r0, #24]   ; retrieve
+                                                                 hardware
+                                                                 stacked
+                                                                 PC
+   91    00000064 01E0                  B       calculate_SVC_number       
+                                                  
+   92                           
+   93                           called_from_main
+   94    00000066 6846                  MOV     r0, SP          ; peek into
+                                                                 main
+                                                                 stack
+   95    00000068 816A                  LDR     r1, [r0, #40]   ; retrieve
+                                                                 hardware
+                                                                 stacked
+                                                                 PC
+   96                                   
+   97                           calculate_SVC_number
+   98    0000006A 31F8022C              LDRH    r2, [r1, #-2]   ; load half
+                                                                 word
+   99    0000006E 22F47F42              BIC     r2, r2, #0xFF00 ; Extract SVC
+                                                                 number
+  100                                           
+  101    00000072 002A                  CMP     r2, #0
+  102    00000074 07D0                  BEQ    svc_function_isrOff
+  103    00000076 012A                  CMP     r2, #1
+  104    00000078 0BD0                  BEQ    svc_function_isrOn
+  105    0000007A 022A                  CMP     r2, #2
+  106    0000007C 0FD0                  BEQ    svc_function_switchContext
+  107    0000007E 032A                  CMP     r2, #3
+  108    00000080 2ED0                  BEQ    svc_function_loadContext_for_ter
+                                                minate
+  109                                   
+  110    00000082 62B6                  CPSIE   I               ; for all other
+                                                                 SVC numbers
+  111    00000084 07BD                  POP     {r0,r1,r2,PC}   ; exit ISR and
+                                                                 trigger_hardwa
+                                                                re_unstack
+                                                                 
+  112                           
+  113                           ;;;---------------------
+  114                           svc_function_isrOff             
+  115                           ;  SVC function 0
+  116    00000086 4FF0A000              MOV     r0, #0xA0       ; this chip
+                                                                 ignores the 4
+                                                                 least
+                                                                 significant
+                                                                 bits
+  117                                                           ; and the
+                                 priority value of Sys Tick has been set to
+                                 0xE0
+  118    0000008A 80F31188              MSR     BASEPRI,  r0    ; disables sys
+                                                                 tick, but SVC
+                                                                 interrupt is
+                                                                 still
+                                                                 enabled
+  119    0000008E 62B6                  CPSIE   I
+  120    00000090 07BD                  POP     {r0,r1,r2,PC}   ; exit ISR and
+                                                                 trigger_hardwa
+                                                                re_unstack
+                                                                 
+  121                           
+  122                           ;;;---------------------
+  123                           svc_function_isrOn              
+  124                           ;  SVC function 1
+  125    00000092 4FF00000              MOV     r0, #0
+  126    00000096 80F31188              MSR     BASEPRI,  r0    ; sys tick
+                                                                 enabled
+  127    0000009A 62B6                  CPSIE   I
+  128    0000009C 07BD                  POP     {r0,r1,r2,PC}   ; exit ISR and
+                                                                 trigger_hardwa
+                                                                re_unstack
+                                                                 
+  129                           
+  130                           ;;;----------------------
+  131                           svc_function_switchContext        
+  132                           ;  SVC function 2
+  133    0000009E EFF30980              MRS     r0,  psp        ; r0 contains
+                                                                 the process
+                                                                 stack pointer
+                                                                 
+  134    000000A2 BFF36F8F              ISB                     ; of the task
+  that was running before interrupt
+  135    000000A6 4449                  LDR     r1,  = PreviousTask        
+                                                        
+  136    000000A8 0968                  LDR     r1,  [r1]       ; point r1 to
+                                                                 PrevisouTask->
+                                                                SP
+  137    000000AA 0860                  STR     r0,  [r1]
+  138    000000AC 01F10401              ADD     r1, r1, #4
+  139    000000B0 81E8F00F              STMIA   r1, {r4-r11}    ; this
+                                                                 completes
+                                                                 context saving
+                                                                 for task
+                                                                 running before
+                                                                 interrupt
+  140                                   
+  141    000000B4 07BC                  POP     {r0, r1, r2}    ; to (partly)
+                                                                 reverse the
+                                                                 PUSH at the
+                                                                 beginning of
+                                                                 SVC handler
+  142                                                           ; exception
+                                 return value is now at top of main stack
+  143                                                           ; and this
+                                 shall be popped while leaving the ISR
+  144                                   
+  145    000000B6 3F49                  LDR     r1,  =NextTask
+  146    000000B8 0968                  LDR     r1,  [r1]
+  147    000000BA 0868                  LDR     r0,  [r1]       ; retrieve
+                                                                 stored process
+                                                                 stack
+                                                                 pointer
+  148    000000BC 80F30988              MSR     psp, r0
+  149    000000C0 BFF36F8F              ISB
+  150                                   
+  151    000000C4 01F10401              ADD     r1,  r1, #4     ; make r0 point
+                                                                 to RunningTask
+                                                                ->R4toR11[0]
+  152    000000C8 91E8F00F              LDMIA   r1, {r4-r11}    ; restore r4
+                                                                 through
+                                                                 r11
+  153    000000CC BFF36F8F              ISB
+  154                                           
+  155    000000D0 4FF00000              MOV     r0, #0
+  156    000000D4 80F31188              MSR     BASEPRI,  r0    ;  enables all
+                                                                 maskable
+                                                                 interrupts,
+                                                                 including sys
+                                                                 tick
+  157    000000D8 BFF36F8F              ISB
+  158    000000DC 62B6                  CPSIE   I
+  159    000000DE 00BD                  POP     {PC}            ; exit ISR and
+                                                                 trigger_hardwa
+                                                                re_unstack
+                                                                 
+  160                           ;;;----------------------
+  161                           svc_function_loadContext_for_terminate       
+                                 
+  162                           ;  SVC function 3
+  163    000000E0 07BC                  POP     {r0, r1, r2}    ; to (partly)
+                                                                 reverse the
+                                                                 PUSH at the
+                                                                 beginning of
+                                                                 SVC handler
+  164                                   
+  165    000000E2 3449                  LDR     r1,  =NextTask
+  166    000000E4 0968                  LDR     r1,  [r1]
+  167    000000E6 0868                  LDR     r0,  [r1]
+  168    000000E8 80F30988              MSR     psp, r0
+  169    000000EC BFF36F8F              ISB
+  170                                   
+  171    000000F0 01F10401              ADD     r1,  r1, #4     ; make r0 point
+                                                                 to RunningTask
+                                                                ->R4toR11[0]
+  172    000000F4 91E8F00F              LDMIA   r1, {r4-r11}    ; restore r4
+                                                                 through
+                                                                 r11
+  173    000000F8 BFF36F8F              ISB
+  174                                           
+  175    000000FC 4FF00000              MOV     r0, #0
+  176    00000100 80F31188              MSR     BASEPRI,  r0    ;  enables all
+                                                                 maskable
+                                                                 interrupts,
+                                                                 including sys
+                                                                 tick
+  177    00000104 BFF36F8F              ISB
+  178    00000108 62B6                  CPSIE   I
+  179    0000010A 00BD                  POP     {PC}            ; exit ISR and
+                                                                 trigger_hardwa
+                                                                re_unstack
+                                                                 
+  180                                   
+  181                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  182                           
+  183                           SwitchContext
+  184                           
+  185    0000010C 00B5                  PUSH    {LR}
+  186                           
+  187    0000010E BFF36F8F              ISB
+  188    00000112 02DF                  SVC     #2              ; call SVC
+                                                                 function 3
+                                                                 which loads
+                                                                 context
+  189    00000114 BFF36F8F              ISB
+  190                                   
+  191    00000118 00BD                  POP     {PC}      
+  192                           
+  193                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  194                           
+  195                           LoadContext_In_Terminate
+  196                           ; use as the last line of the function
+                                 terminate() and nowhere else !
+  197                                   
+  198    0000011A 00B5                  PUSH    {LR}
+  199                                   
+  200    0000011C BFF36F8F              ISB
+  201    00000120 03DF                  SVC     #3              ; call SVC
+                                                                 function 3
+                                                                 which loads
+                                                                 context of
+                                                                 NextTask
+  202    00000122 BFF36F8F              ISB
+  203                                   
+  204    00000126 00BD                  POP     {PC}      
+  205                           
+  206                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  207                           
+  208                           LoadContext_In_Run 
+  209                           ; use as the last line of the function run()
+                                 and nowhere else !
+  210                           
+  211    00000128 72B6                  CPSID    I                   ; just in
+                                                                      case
+                                                                      interrupt
+                                                                     s were
+                                                                      enabled
+                                                                      before
+  212                                   
+  213                           ;     still in priveleged mode
+  214                           
+  215                           ;  -*-start of code section that makes sure
+                                 that sys tick does not hit on exiting
+  216    0000012A 2448                  LDR      r0, =address_sysTick_reload
+  217    0000012C 2449                  LDR      r1, =address_sysTick_counter
+  218    0000012E 0268                  LDR      r2, [r0]       
+  219    00000130 0A60                  STR      r2, [r1]            ; make sys
+                                                       tick countdown start
+                                                       again from reload value
+                                                       
+  220                                   
+  221    00000132 2448                  LDR      r0,  =address_ICSR
+  222    00000134 0168                  LDR      r1,  [r0]
+  223    00000136 11F48001              ANDS     r1,  r1, #(1<<22)   ; check
+                                                            value of bit 22 of
+                                                            ICSR
+  224    0000013A 03D0                  BEQ      body_LoadContext_FirstTime
+  225                                   
+  226                                                             ; if bit 22
+                                 of ICSR is 1, then there must be a pending
+                                 IRQ
+  227    0000013C 0168                  LDR      r1,  [r0]        ; and this
+                                                                   must be a
+                                                                   Sys tick IRQ
+                                                                   since no
+                                                                   other
+                                                                   asynchronous
+                                                                   interrupt
+                                                                   has been
+                                                                   enabled
+  228    0000013E 41F00071              ORR      r1,  r1, #(1<<25) 
+  229    00000142 0160                  STR      r1,  [r0]        ;  write 1 at
+                                                                   bit 25 in
+                                                                   ICSR
+  230                                                             ; so that
+                                 the pending sys tick interrupt is cleared     
+                                  
+  231                           ;  -*-end of code that makes sure that sys
+                                 tick does not hit on exiting
+  232                           
+  233                           body_LoadContext_FirstTime
+  234    00000144 4FF00000              MOV      r0, #0
+  235    00000148 80F31188              MSR      BASEPRI,  r0     ;  enables
+                                                                   all maskable
+                                                                   interrupts,
+                                                                   including
+                                                                   sys
+                                                                   tick
+  236    0000014C BFF36F8F              ISB
+  237    00000150 62B6                  CPSIE    I
+  238                           
+  239    00000152 EFF31480              MRS      r0,  CONTROL     ; 
+  240    00000156 50F00300              ORRS     r0,  r0, #3      ; set SP =
+                                                                   PSP,
+                                                                   
+  241    0000015A 80F31488              MSR      CONTROL, r0      ; and mode = 
+                                                                   thread,
+                                                                   unpriveleged
+  242    0000015E BFF36F8F              ISB 
+  243                                   
+  244                           ;   from now on in unpriveleged mode, except
+                                 while interrupts are served
+  245                           
+  246    00000162 1448                  LDR      r0,  =NextTask
+  247    00000164 0068                  LDR      r0,  [r0]
+  248    00000166 D0F800D0              LDR      SP,  [r0]        ; retrieve
+                                                                   stored
+                                                                   SP
+  249    0000016A 08B0                  ADD      SP,  SP, #32     ; "unstack"
+                                                                   the 8
+                                                                   registers
+                                                                   put there
+                                                                   while
+                                                                   creating
+                                                                   task
+  250    0000016C BFF36F8F              ISB
+  251                                   
+  252    00000170 00F12400              ADD      r0,  r0, #36     ; make r0
+                                                                   point to
+                                                                   RunningTask-
+                                                                  >PC
+  253    00000174 D0F800E0              LDR      LR,  [r0]        ; retrieve
+                                                                   RunningTask-
+                                                                  >PC
+  254                                   
+  255    00000178 4168                  LDR      r1,  [r0, #4]    ; retrieve
+                                                                   RunningTask-
+                                                                  >SPSR
+  256    0000017A 81F30088              MSR      APSR, r1
+  257    0000017E BFF36F8F              ISB
+  258                                   
+  259    00000182 BEF1000F              CMP      LR, #0
+  260    00000186 00D0                  BEQ      trap
+  261                                   
+  262    00000188 7047                  BX       LR
+  263                           
+  264    0000018A FEE7          trap    B      trap
+  265                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  266                           
+  267                           switch_to_stack_of_next_task
+  268                           ;   to be used in the terminate function, and
+                                 nowhere else
+  269                                   
+  270    0000018C 0948                  LDR      r0,  =NextTask
+  271    0000018E 0068                  LDR      r0,  [r0]      ; point r0 to
+                                                                 RunningTask->S
+                                                                P
+  272    00000190 D0F800D0              LDR      SP,  [r0]      ; switch to
+                                                                 stack of the
+                                                                 task to be
+                                                                 loaded
+  273    00000194 BFF36F8F              ISB
+  274    00000198 82B0                          SUB      SP, SP, #8
+  275    0000019A BFF36F8F                      ISB
+  276                                   
+  277    0000019E 7047                  BX      LR
+  278                                   
+  279                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  280                           
+  281                           isr_on
+  282    000001A0 00B5                  PUSH    {LR};
+  283    000001A2 01DF                  SVC     #1
+  284    000001A4 BFF36F8F              ISB
+  285    000001A8 00BD                  POP     {PC}
+  286                                   
+  287                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  288                           
+  289                           isr_off
+  290    000001AA 00B5                  PUSH    {LR}
+  291    000001AC 00DF                  SVC     #0
+  292    000001AE BFF36F8F              ISB
+  293    000001B2 00BD                  POP     {PC}
+  294                           
+  295                           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  296                           
+  296.1                                  TABLE
+  296.2  000001B4 ........              Reference on line 49,145,165,246,270
+  296.3  000001B8 ........              Reference on line 135
+  296.4  000001BC 14E000E0              Reference on line 216
+  296.5  000001C0 18E000E0              Reference on line 217
+  296.6  000001C4 04ED00E0              Reference on line 221
+  297                                   END
+##############################
+#           CRC:0            #
+#        Errors:   0         #
+#        Warnings: 0         #
+#         Bytes: 456         #
+##############################
+
+
+
+

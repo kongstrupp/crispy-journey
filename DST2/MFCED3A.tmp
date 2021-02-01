@@ -1,0 +1,60 @@
+//#include kernel_functions.h
+#include <stdlib.h>
+
+exception configList(){
+  list *lists[] = {ReadyList, WaitingList, TimerList};
+  
+  for(int i = 0, i < 3; i++){
+    lists[i] = (list*) malloc (sizeof(list));
+    if(lists[i] == NULL)
+      return FAIL;
+  
+    lists[i]->pHead = (listobj*) malloc (sizeof(listobj));
+    if(lists[i]->pHead == NULL)
+      return FAIL;
+  
+    lists[i]->pTail = (listobj*) malloc (sizeof(listobj));
+    if(lists[i]->pTail == NULL)
+      return FAIL;
+  
+    lists[i]->pHead->pNext = lists[i]->pTail;
+    lists[i]->pHead->pPrevious = NULL;
+    lists[i]->pTail->pNext = NULL;
+    lists[i]->pTail->pPrevious = Readylist->pHead;
+  }
+  return SUCCESS;
+}
+
+void insertList(list List, listobj *Node) {
+    listobj *object_temp;
+    object_temp = list->pHead->pNext;
+    
+    if (List->pTail == object_temp) {
+        List->pHead->pNext = Node;
+        List->pTail->pPrevious = Node;
+        Node->pPrevious = List->pHead;
+        Node->pNext = List->pTail;
+        return;
+    }
+
+    if (List == TimerList) {
+        while (Node->nTCnt > object_temp->nTCnt) {
+            object_temp = object_temp->pNext;
+            if (object_temp == List->pTail)
+                break;
+        }
+    } else {
+        while (Node->pTask->DeadLine > object_temp->pTask->DeadLine) {
+            object_temp = object_temp->pNext;
+            if (object_temp == List->pTail)
+                break;
+        }
+    }
+
+    Node->pNext = object_temp;
+    Node->pPrevious = object_temp->pPrevious;
+    object_temp->pPrevious->pNext = Node;
+    object_temp->pPrevious = Node;
+    return;
+}
+
